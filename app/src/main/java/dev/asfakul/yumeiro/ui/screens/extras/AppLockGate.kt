@@ -4,7 +4,7 @@
  * Licensed under the GNU General Public License v3.0 or later. See LICENSE and TRADEMARKS.md.
  * Do not remove or alter this notice.
  */
- 
+
 package dev.asfakul.yumeiro.ui.screens.extras
 
 import android.app.Activity
@@ -24,6 +24,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -35,6 +36,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import dev.asfakul.yumeiro.security.Privacy
+import kotlinx.coroutines.delay
 
 @Composable
 fun AppLockGate(activity: Activity) {
@@ -53,6 +55,22 @@ fun AppLockGate(activity: Activity) {
     var pin by remember { mutableStateOf("") }
     var confirmPin by remember { mutableStateOf("") }
     var error by remember { mutableStateOf("") }
+
+    var remainingMillis by remember {
+        mutableStateOf(Privacy.pinLockoutRemainingMillis(activity))
+    }
+
+    // Keep the countdown updated while the lock screen is visible.
+    LaunchedEffect(locked, hasPin) {
+        while (locked && hasPin) {
+            remainingMillis = Privacy.pinLockoutRemainingMillis(activity)
+            delay(1000L)
+        }
+    }
+
+    val secondsRemaining = (remainingMillis + 999L) / 1000L
+    val minutes = secondsRemaining / 60L
+    val seconds = secondsRemaining % 60L
 
     Column(
         modifier = Modifier
@@ -95,6 +113,7 @@ fun AppLockGate(activity: Activity) {
                     error = ""
                 }
             },
+            enabled = !hasPin || remainingMillis <= 0L,
             label = { Text("6-digit PIN") },
             singleLine = true,
             visualTransformation = PasswordVisualTransformation(),
@@ -125,7 +144,16 @@ fun AppLockGate(activity: Activity) {
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        if (error.isNotEmpty()) {
+        if (hasPin && remainingMillis > 0L) {
+            Text(
+                text = "Too many incorrect attempts. Try again in %02d:%02d."
+                    .format(minutes, seconds),
+                color = MaterialTheme.colorScheme.error,
+                style = MaterialTheme.typography.bodyMedium
+            )
+
+            Spacer(modifier = Modifier.height(12.dp))
+        } else if (error.isNotEmpty()) {
             Text(
                 text = error,
                 color = MaterialTheme.colorScheme.error,
@@ -144,8 +172,15 @@ fun AppLockGate(activity: Activity) {
 
                 if (hasPin) {
                     if (!Privacy.verifyPin(activity, pin)) {
-                        error = "Incorrect PIN. Try again."
                         pin = ""
+                        remainingMillis =
+                            Privacy.pinLockoutRemainingMillis(activity)
+
+                        error = if (remainingMillis > 0L) {
+                            ""
+                        } else {
+                            "Incorrect PIN. Try again."
+                        }
                     }
                 } else {
                     if (confirmPin.length != 6) {
@@ -159,7 +194,8 @@ fun AppLockGate(activity: Activity) {
                 }
             },
             enabled = pin.length == 6 &&
-                (hasPin || confirmPin.length == 6)
+                (hasPin && remainingMillis <= 0L ||
+                    !hasPin && confirmPin.length == 6)
         ) {
             Text(if (hasPin) "Unlock" else "Create PIN")
         }
