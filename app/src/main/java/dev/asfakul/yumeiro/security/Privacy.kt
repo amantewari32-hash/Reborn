@@ -29,6 +29,9 @@ object Privacy {
     private const val HASH_ITERATIONS = 150_000
     private const val HASH_BITS = 256
 
+    private const val FAILED_ATTEMPTS_KEY = "pin_failed_attempts"
+    private const val LOCKOUT_UNTIL_KEY = "pin_lockout_until"
+
     private val _incognito = MutableStateFlow(false)
     val incognito: StateFlow<Boolean> = _incognito.asStateFlow()
 
@@ -56,9 +59,6 @@ object Privacy {
         _lockEnabled.value = p.getBoolean("lock", false)
         _lockAfter.value = p.getInt("lock_after", 60)
         _hideInRecents.value = p.getBoolean("hide_recents", false)
-
-        // If an older installation had device authentication enabled, keep the lock active.
-        // AppLockGate will require creation of a new app PIN before allowing access.
         _locked.value = _lockEnabled.value
     }
 
@@ -79,6 +79,47 @@ object Privacy {
     fun hasPin(context: Context): Boolean {
         val p = prefs(context)
         return p.contains("pin_salt") && p.contains("pin_hash")
+    }
+
+    /**
+     * Returns the remaining PIN lockout time in milliseconds.
+     * The expiry timestamp is persisted, so restarting the app does not clear it.
+     */
+    fun pinLockoutRemainingMillis(context: Context): Long {
+        val until = prefs(context).getLong(LOCKOUT_UNTIL_KEY, 0L)
+        return (until - System.currentTimeMillis()).coerceAtLeast(0L)
+    }
+
+    private fun recordFailedPinAttempt(context: Context) {
+        val p = prefs(context)
+        val attempts = p.getInt(FAILED_ATTEMPTS_KEY, 0) + 1
+
+        val delayMillis = when {
+            attempts >= 7 -> 30 * 60 * 1000L
+            attempts == 6 -> 15 * 60 * 1000L
+            attempts == 5 -> 5 * 60 * 1000L
+            attempts == 4 -> 60 * 1000L
+            attempts == 3 -> 30 * 1000L
+            else -> 0L
+        }
+
+        val editor = p.edit().putInt(FAILED_ATTEMPTS_KEY, attempts)
+
+        if (delayMillis > 0L) {
+            editor.putLong(
+                LOCKOUT_UNTIL_KEY,
+                System.currentTimeMillis() + delayMillis
+            )
+        }
+
+        editor.apply()
+    }
+
+    private fun clearFailedPinAttempts(context: Context) {
+        prefs(context).edit()
+            .remove(FAILED_ATTEMPTS_KEY)
+            .remove(LOCKOUT_UNTIL_KEY)
+            .apply()
     }
 
     /**
@@ -103,6 +144,8 @@ object Privacy {
                 .putString("pin_hash", Base64.encodeToString(hash, Base64.NO_WRAP))
                 .putBoolean("lock", true)
                 .apply()
+
+            clearFailedPinAttempts(context)
 
             _lockEnabled.value = true
             _locked.value = false
@@ -131,6 +174,8 @@ object Privacy {
             .putBoolean("lock", false)
             .apply()
 
+        clearFailedPinAttempts(context)
+
         _lockEnabled.value = false
         _locked.value = false
         (context as? Activity)?.let(::applyWindow)
@@ -141,6 +186,8 @@ object Privacy {
     private fun verifyPinWithoutUnlock(context: Context, pin: String): Boolean {
         if (pin.length != PIN_LENGTH || pin.any { !it.isDigit() }) return false
 
+        if (pinLockoutRemainingMillis(context) > 0L) return false
+
         return runCatching {
             val p = prefs(context)
             val saltText = p.getString("pin_salt", null) ?: return false
@@ -148,7 +195,15 @@ object Privacy {
             val salt = Base64.decode(saltText, Base64.NO_WRAP)
             val expected = Base64.decode(hashText, Base64.NO_WRAP)
             val actual = derive(pin, salt)
-            MessageDigest.isEqual(expected, actual)
+            val matches = MessageDigest.isEqual(expected, actual)
+
+            if (matches) {
+                clearFailedPinAttempts(context)
+            } else {
+                recordFailedPinAttempt(context)
+            }
+
+            matches
         }.getOrDefault(false)
     }
 
