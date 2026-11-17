@@ -1,3 +1,4 @@
+
 /*
  * Yumeiro — Copyright (C) 2026 siamform
  * Licensed under the GNU General Public License v3.0 or later. See LICENSE and TRADEMARKS.md.
@@ -34,6 +35,7 @@ class MainActivity : com.lagradost.cloudstream3.MainActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         StreamRepository.init(this)
+
         // Messages from extensions use the app's own message bar.
         com.lagradost.cloudstream3.CommonActivity.toastHandler = { text, _ ->
             dev.asfakul.yumeiro.ui.components.AppMessages.show(this, text)
@@ -42,26 +44,45 @@ class MainActivity : com.lagradost.cloudstream3.MainActivity() {
         // Background update check on app open (once per process; restores running downloads).
         // Re-signed / repackaged copies never auto-update (official APKs could not install over them).
         val unofficial = dev.asfakul.yumeiro.security.IntegrityGuard.isUnofficial(this)
-        UpdateManager.get(this).onAppStart(autoCheckAllowedForBuild = BuildConfig.AUTO_UPDATE_CHECK && !unofficial)
+        UpdateManager.get(this).onAppStart(
+            autoCheckAllowedForBuild = BuildConfig.AUTO_UPDATE_CHECK && !unofficial
+        )
+
         handleIntent(intent)
         dev.asfakul.yumeiro.ui.tv.TvMode.init(this)
 
         setContent {
             val palette = rememberMtPalette()
+
             LaunchedEffect(palette.isDark) {
-                val style = if (palette.isDark) SystemBarStyle.dark(Color.TRANSPARENT)
-                else SystemBarStyle.light(Color.TRANSPARENT, Color.TRANSPARENT)
-                enableEdgeToEdge(statusBarStyle = style, navigationBarStyle = style)
+                val style =
+                    if (palette.isDark) SystemBarStyle.dark(Color.TRANSPARENT)
+                    else SystemBarStyle.light(Color.TRANSPARENT, Color.TRANSPARENT)
+
+                enableEdgeToEdge(
+                    statusBarStyle = style,
+                    navigationBarStyle = style
+                )
             }
+
             // TV layout: what the device reports, unless Settings → Navigation bar → Layout overrides it.
-            val tvDetected = androidx.compose.runtime.remember { dev.asfakul.yumeiro.ui.tv.TvMode.detect(this@MainActivity) }
+            val tvDetected = androidx.compose.runtime.remember {
+                dev.asfakul.yumeiro.ui.tv.TvMode.detect(this@MainActivity)
+            }
+
             val tvPref by dev.asfakul.yumeiro.ui.tv.TvMode.pref.collectAsState()
             val tv = dev.asfakul.yumeiro.ui.tv.TvMode.resolve(tvPref, tvDetected)
-            androidx.compose.runtime.CompositionLocalProvider(dev.asfakul.yumeiro.ui.tv.LocalTvMode provides tv) {
+
+            androidx.compose.runtime.CompositionLocalProvider(
+                dev.asfakul.yumeiro.ui.tv.LocalTvMode provides tv
+            ) {
                 MTPlayerTheme(palette = palette) {
                     val viewModel: MainViewModel = viewModel()
                     MTPlayerApp(viewModel = viewModel)
-                    dev.asfakul.yumeiro.ui.screens.extras.AppLockGate(this@MainActivity)
+
+                    dev.asfakul.yumeiro.ui.screens.extras.AppLockGate(
+                        this@MainActivity
+                    )
                 }
             }
         }
@@ -82,15 +103,6 @@ class MainActivity : com.lagradost.cloudstream3.MainActivity() {
         handleIntent(intent)
     }
 
-    @Deprecated("Only for the Android 7–8 app-lock screen (no BiometricPrompt there).")
-    @Suppress("DEPRECATION")
-    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-        super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode == dev.asfakul.yumeiro.security.Privacy.REQ_CONFIRM_CREDENTIAL) {
-            dev.asfakul.yumeiro.security.Privacy.onCredentialResult(resultCode == RESULT_OK)
-        }
-    }
-
     /** Android 9–11: enter picture-in-picture when the user presses Home during video playback. */
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
@@ -103,39 +115,88 @@ class MainActivity : com.lagradost.cloudstream3.MainActivity() {
             UpdateManager.get(this).showDialog()
             return
         }
+
         if (intent?.action == dev.asfakul.yumeiro.online.download.DownloadWorker.ACTION_OPEN_DOWNLOADS) {
             dev.asfakul.yumeiro.ui.screens.downloads.DownloadsNav.open()
             return
         }
+
         if (intent?.action == dev.asfakul.yumeiro.notify.AppNotifier.ACTION_OPEN_INBOX) {
             // Opened from a Yumeiro notification: show the inbox and mark that item as read.
             intent.getStringExtra(dev.asfakul.yumeiro.notify.AppNotifier.EXTRA_ITEM)?.let {
                 dev.asfakul.yumeiro.notify.Inbox.markRead(this, it)
             }
-            // A notice with a deep link opens its target straight away (validated again here: the
-            // intent could come from an old notification). Anything else lands in the inbox.
-            val link = dev.asfakul.yumeiro.notify.FcmPlan.safeLink(intent.getStringExtra(dev.asfakul.yumeiro.notify.AppNotifier.EXTRA_LINK))
+
+            // A notice with a deep link opens its target straight away (validated again here:
+            // the intent could come from an old notification). Anything else lands in the inbox.
+            val link = dev.asfakul.yumeiro.notify.FcmPlan.safeLink(
+                intent.getStringExtra(dev.asfakul.yumeiro.notify.AppNotifier.EXTRA_LINK)
+            )
+
             val pages = dev.asfakul.yumeiro.ui.screens.extras.AppPages
+
             when {
-                link == null || link == "inbox" -> pages.open(dev.asfakul.yumeiro.ui.screens.extras.AppPages.Page.INBOX)
-                link.startsWith("https://") -> if (!dev.asfakul.yumeiro.ui.screens.extras.Links.open(this, link)) pages.open(dev.asfakul.yumeiro.ui.screens.extras.AppPages.Page.INBOX)
+                link == null || link == "inbox" ->
+                    pages.open(dev.asfakul.yumeiro.ui.screens.extras.AppPages.Page.INBOX)
+
+                link.startsWith("https://") ->
+                    if (!dev.asfakul.yumeiro.ui.screens.extras.Links.open(this, link)) {
+                        pages.open(dev.asfakul.yumeiro.ui.screens.extras.AppPages.Page.INBOX)
+                    }
+
                 else -> pages.runAction(link)
             }
             return
         }
-        dev.asfakul.yumeiro.widget.ContinueWidget.itemFrom(intent)?.let { dev.asfakul.yumeiro.widget.TitleNav.open(it); return }
+
+        dev.asfakul.yumeiro.widget.ContinueWidget.itemFrom(intent)?.let {
+            dev.asfakul.yumeiro.widget.TitleNav.open(it)
+            return
+        }
+
         intent?.data?.let { uri ->
-            if (dev.asfakul.yumeiro.online.anime.AnimeSync.handleRedirect(this, uri) { msg -> runOnUiThread { dev.asfakul.yumeiro.ui.components.AppMessages.show(this, msg) } }) return
+            if (
+                dev.asfakul.yumeiro.online.anime.AnimeSync.handleRedirect(this, uri) { msg ->
+                    runOnUiThread {
+                        dev.asfakul.yumeiro.ui.components.AppMessages.show(this, msg)
+                    }
+                }
+            ) return
         }
+
         // Extension, repository and add-on links / files (any ecosystem) go to "Add anything".
-        val incoming = intent?.data ?: intent?.takeIf { it.action == Intent.ACTION_SEND }?.let {
-            @Suppress("DEPRECATION") (it.getParcelableExtra(Intent.EXTRA_STREAM) as? android.net.Uri)
-                ?: it.getStringExtra(Intent.EXTRA_TEXT)?.trim()?.takeIf { t -> !t.contains(' ') }?.let(android.net.Uri::parse)
+        val incoming = intent?.data
+            ?: intent?.takeIf { it.action == Intent.ACTION_SEND }?.let {
+                @Suppress("DEPRECATION")
+                (it.getParcelableExtra(Intent.EXTRA_STREAM) as? android.net.Uri)
+                    ?: it.getStringExtra(Intent.EXTRA_TEXT)
+                        ?.trim()
+                        ?.takeIf { t -> !t.contains(' ') }
+                        ?.let(android.net.Uri::parse)
+            }
+
+        val incomingName = incoming?.takeIf { it.scheme == "content" }?.let { uri ->
+            runCatching {
+                contentResolver.query(
+                    uri,
+                    arrayOf(android.provider.OpenableColumns.DISPLAY_NAME),
+                    null,
+                    null,
+                    null
+                )?.use { cursor ->
+                    if (cursor.moveToFirst()) cursor.getString(0) else null
+                }
+            }.getOrNull()
         }
-        val incomingName = incoming?.takeIf { it.scheme == "content" }?.let { u ->
-            runCatching { contentResolver.query(u, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c -> if (c.moveToFirst()) c.getString(0) else null } }.getOrNull()
-        }
-        if (incoming != null && dev.asfakul.yumeiro.ui.screens.sources.UniversalAddInbox.offer(incoming, incomingName)) return
+
+        if (
+            incoming != null &&
+            dev.asfakul.yumeiro.ui.screens.sources.UniversalAddInbox.offer(
+                incoming,
+                incomingName
+            )
+        ) return
+
         IncomingMedia.handle(this, intent)
     }
 }
