@@ -92,36 +92,275 @@ private fun Section(title: String, hint: String? = null, content: @Composable ()
 
 // region Privacy
 
+
 @Composable
 fun PrivacyScreen(onBack: () -> Unit) {
     val context = LocalContext.current
     val activity = context as? Activity
+
     val incognito by Privacy.incognito.collectAsState()
     val lock by Privacy.lockEnabled.collectAsState()
     val after by Privacy.lockAfter.collectAsState()
     val hide by Privacy.hideInRecents.collectAsState()
+
+    var showPinDialog by remember { mutableStateOf(false) }
+    var pinAction by remember { mutableStateOf("create") }
+
+    var currentPin by remember { mutableStateOf("") }
+    var newPin by remember { mutableStateOf("") }
+    var confirmPin by remember { mutableStateOf("") }
+    var pinError by remember { mutableStateOf("") }
+
+    fun openPinDialog(action: String) {
+        pinAction = action
+        currentPin = ""
+        newPin = ""
+        confirmPin = ""
+        pinError = ""
+        showPinDialog = true
+    }
+
+    val pinReady = when (pinAction) {
+        "create" -> newPin.length == 6 && confirmPin.length == 6
+        "change" -> currentPin.length == 6 &&
+            newPin.length == 6 && confirmPin.length == 6
+        "disable" -> currentPin.length == 6
+        else -> false
+    }
+
     Column(Modifier.fillMaxSize()) {
         SubPageHeader(title = "Privacy", onBack = onBack)
-        Column(Modifier.verticalScroll(dev.asfakul.yumeiro.ui.components.ScrollMemory.scroll("privacy")).padding(horizontal = 16.dp).padding(bottom = 48.dp)) {
-            Section("Incognito mode", "While on, nothing you watch, read or listen to is saved: no history, no Continue watching, no tracker updates.") {
-                SettingsToggleRow("Incognito", if (incognito) "On — history is paused" else "Off", incognito, { Privacy.setIncognito(context, it) }, "privacy_incognito")
+
+        Column(
+            Modifier
+                .verticalScroll(
+                    dev.asfakul.yumeiro.ui.components.ScrollMemory.scroll("privacy")
+                )
+                .padding(horizontal = 16.dp)
+                .padding(bottom = 48.dp)
+        ) {
+            Section(
+                "Incognito mode",
+                "While on, nothing you watch, read or listen to is saved: no history, no Continue watching, no tracker updates."
+            ) {
+                SettingsToggleRow(
+                    "Incognito",
+                    if (incognito) "On — history is paused" else "Off",
+                    incognito,
+                    { Privacy.setIncognito(context, it) },
+                    "privacy_incognito"
+                )
             }
-            Section("App lock", "Ask for your fingerprint, face or screen lock when Yumeiro opens.") {
-                SettingsToggleRow("Lock Yumeiro", if (Privacy.canAuthenticate(context)) "Uses the device's own lock" else "Set a screen lock in Android settings first", lock, { on ->
-                    if (activity != null) Privacy.setLockEnabled(activity, on) { ok -> if (!ok && on) AppMessages.error(context, "App lock wasn't turned on") }
-                }, "privacy_lock")
+
+            Section(
+                "App lock",
+                "Protect Yumeiro using a separate six-digit PIN."
+            ) {
+                SettingsToggleRow(
+                    "Lock Yumeiro",
+                    if (lock) "Protected with your app PIN"
+                    else "Use a six-digit PIN to protect the app",
+                    lock,
+                    { enabled ->
+                        if (enabled) {
+                            openPinDialog("create")
+                        } else {
+                            openPinDialog("disable")
+                        }
+                    },
+                    "privacy_lock"
+                )
+
                 if (lock) {
-                    val options = listOf(0 to "Every time", 60 to "After 1 minute", 300 to "After 5 minutes", 1800 to "After 30 minutes")
-                    Text("Lock again", color = TextSecondary, fontSize = 13.sp, modifier = Modifier.padding(top = 6.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(vertical = 6.dp)) {
-                        options.forEach { (sec, label) ->
-                            dev.asfakul.yumeiro.ui.components.FilterPill(label.removePrefix("After "), after == sec, { Privacy.setLockAfter(context, sec) })
+                    val options = listOf(
+                        0 to "Every time",
+                        60 to "After 1 minute",
+                        300 to "After 5 minutes",
+                        1800 to "After 30 minutes"
+                    )
+
+                    Text(
+                        "Lock again",
+                        color = TextSecondary,
+                        fontSize = 13.sp,
+                        modifier = Modifier.padding(top = 6.dp)
+                    )
+
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        modifier = Modifier.padding(vertical = 6.dp)
+                    ) {
+                        options.forEach { (seconds, label) ->
+                            dev.asfakul.yumeiro.ui.components.FilterPill(
+                                label.removePrefix("After "),
+                                after == seconds,
+                                { Privacy.setLockAfter(context, seconds) }
+                            )
                         }
                     }
-                    SettingsToggleRow("Hide content in recents", "Blank preview in the app switcher and no screenshots", hide, { on -> activity?.let { Privacy.setHideInRecents(it, on) } }, "privacy_hide_recents")
+
+                    SettingsToggleRow(
+                        "Hide content in recents",
+                        "Blank preview in the app switcher and no screenshots",
+                        hide,
+                        { enabled ->
+                            activity?.let {
+                                Privacy.setHideInRecents(it, enabled)
+                            }
+                        },
+                        "privacy_hide_recents"
+                    )
+
+                    TextButton(
+                        onClick = { openPinDialog("change") }
+                    ) {
+                        Text("Change app PIN")
+                    }
                 }
             }
         }
+    }
+
+    if (showPinDialog) {
+        val dialogTitle = when (pinAction) {
+            "create" -> "Create app PIN"
+            "change" -> "Change app PIN"
+            else -> "Disable app lock"
+        }
+
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = {
+                showPinDialog = false
+            },
+            title = {
+                Text(dialogTitle)
+            },
+            text = {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    if (pinAction == "change" || pinAction == "disable") {
+                        OutlinedTextField(
+                            value = currentPin,
+                            onValueChange = {
+                                currentPin = it.filter(Char::isDigit).take(6)
+                            },
+                            label = { Text("Current six-digit PIN") },
+                            singleLine = true,
+                            visualTransformation = PasswordVisualTransformation(),
+                            keyboardOptions = KeyboardOptions(
+                                keyboardType = KeyboardType.NumberPassword
+                            ),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+
+                    if (pinAction != "disable") {
+                        OutlinedTextField(
+                            value = newPin,
+                            onValueChange = {
+                                newPin = it.filter(Char::isDigit).take(6)
+                            },
+                            label = { Text("New six-digit PIN") },
+                            singleLine = true,
+                            visualTransformation = PasswordVisualTransformation(),
+                            keyboardOptions = KeyboardOptions(
+                                keyboardType = KeyboardType.NumberPassword
+                            ),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+
+                        OutlinedTextField(
+                            value = confirmPin,
+                            onValueChange = {
+                                confirmPin = it.filter(Char::isDigit).take(6)
+                            },
+                            label = { Text("Confirm PIN") },
+                            singleLine = true,
+                            visualTransformation = PasswordVisualTransformation(),
+                            keyboardOptions = KeyboardOptions(
+                                keyboardType = KeyboardType.NumberPassword
+                            ),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+
+                    if (pinError.isNotBlank()) {
+                        Text(
+                            pinError,
+                            color = androidx.compose.material3.MaterialTheme.colorScheme.error,
+                            fontSize = 12.sp
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = pinReady,
+                    onClick = {
+                        val success = when (pinAction) {
+                            "create" -> {
+                                if (newPin != confirmPin) {
+                                    pinError = "PINs do not match."
+                                    false
+                                } else {
+                                    Privacy.setPin(context, newPin)
+                                }
+                            }
+
+                            "change" -> {
+                                if (newPin != confirmPin) {
+                                    pinError = "PINs do not match."
+                                    false
+                                } else {
+                                    Privacy.setPin(
+                                        context,
+                                        newPin,
+                                        currentPin
+                                    )
+                                }
+                            }
+
+                            else -> Privacy.disableLock(
+                                context,
+                                currentPin
+                            )
+                        }
+
+                        if (success) {
+                            showPinDialog = false
+                            AppMessages.success(
+                                context,
+                                when (pinAction) {
+                                    "create" -> "App lock enabled"
+                                    "change" -> "PIN changed successfully"
+                                    else -> "App lock disabled"
+                                }
+                            )
+                        } else if (pinError.isBlank()) {
+                            pinError = "Incorrect PIN or operation failed."
+                        }
+                    }
+                ) {
+                    Text(
+                        when (pinAction) {
+                            "create" -> "Create PIN"
+                            "change" -> "Change PIN"
+                            else -> "Disable lock"
+                        }
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        showPinDialog = false
+                    }
+                ) {
+                    Text("Cancel")
+                }
+            }
+        )
     }
 }
 
