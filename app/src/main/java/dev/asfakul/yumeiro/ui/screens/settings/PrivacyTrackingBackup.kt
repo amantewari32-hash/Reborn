@@ -338,7 +338,14 @@ fun PrivacyScreen(onBack: () -> Unit) {
                                 }
                             )
                         } else if (pinError.isBlank()) {
-                            pinError = "Incorrect PIN or operation failed."
+    val remaining = Privacy.pinLockoutRemainingMillis(context)
+
+    pinError = if (remaining > 0L) {
+        val seconds = (remaining + 999L) / 1000L
+        "Too many incorrect attempts. Try again in ${seconds}s."
+    } else {
+        "Incorrect PIN or operation failed."
+    }
                         }
                     }
                 ) {
